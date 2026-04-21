@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  backend:
+    image: scodev27/backend-gsx:v1
+    ports:
+      - "${APP_PORT}:8080"
+    volumes:
+      - backend_data:/app/data
+
+  nginx:
+    image: scodev27/nginx-gsx:v1
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  backend_data:
