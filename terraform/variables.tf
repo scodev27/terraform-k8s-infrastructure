@@ -1,7 +1,7 @@
 variable "docker_username" {
   description = "Usuari de Docker Hub"
   type        = string
-  default     = "scodev27" 
+  default     = "scodev27"
 }
 
 variable "app_port" {
