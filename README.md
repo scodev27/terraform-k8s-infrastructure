@@ -103,3 +103,21 @@ Per escalar la nostra infraestructura i fer-la resilient, hem migrat els nostres
 Hem comprovat el comportament del clúster en situacions d'estrès:
 1. **Escalat:** Al llançar la comanda `kubectl scale deployment nginx-deployment --replicas=3`, el Deployment crea automàticament nous Pods per absorbir la càrrega. El Service s'encarrega automàticament de repartir el trànsit entre els 3 Pods disponibles.
 2. **Resiliència (Auto-curació):** Hem simulat una fallada esborrant manualment un Pod (`kubectl delete pod`). El clúster ha detectat que l'estat actual (0 pods) no coincidia amb l'estat desitjat (1 pod) i ha arrencat un contenidor nou en qüestió de segons per recuperar el servei sense intervenció manual.
+
+# Setmana 11: Infraestructura com a Codi (IaC) i CI/CD
+
+En aquesta fase, hem automatitzat la creació de la nostra infraestructura i la integració del codi, abandonant l'execució manual de manifests i comandes.
+
+### 1. Infraestructura com a Codi (Terraform)
+Hem triat **Terraform** en lloc d'Ansible perquè preferim un enfocament *declaratiu*. En lloc de dir-li al sistema *com* ha de crear les coses pas a pas (procedimental), li diem *quin estat final* volem (ex: "vull un Deployment de backend i un Service"), i Terraform s'encarrega de connectar-se a l'API de Kubernetes per fer-ho realitat.
+
+L'estructura està dividida en:
+* `main.tf`: Defineix els recursos de Kubernetes (Deployments, Services, ConfigMaps).
+* `variables.tf`: Parametritza valors com l'usuari de Docker Hub o els ports, evitant tenir credencials o dades fixes "hardcodejades" al codi principal.
+* `outputs.tf`: Ens retorna dades útils, com el NodePort per accedir a l'Nginx.
+
+### 2. El Pipeline de CI/CD (GitHub Actions + Local CD)
+A causa de les limitacions de xarxa (GitHub Actions no pot accedir al nostre clúster de Minikube local), hem dividit el pipeline en dues fases:
+
+* **Integració Contínua (CI) a GitHub:** Quan fem un `push` a la branca `main`, es dispara un workflow de GitHub Actions. Aquest pipeline valida la sintaxi del codi de Terraform (`terraform fmt` i `terraform validate`). Després, construeix les noves imatges de Docker per al Backend i l'Nginx i les puja al nostre repositori de Docker Hub. Per mantenir un control de versions correcte, les imatges s'etiqueten tant amb el tag `latest` com amb el codi SHA exacte del commit (`${{ github.sha }}`).
+* **Desplegament Continu (CD) Local:** Un cop el pipeline de CI està en verd, descarreguem els canvis a la nostra màquina local. Assegurant-nos que el Minikube està encès, anem a la carpeta `terraform/` i executem `terraform apply`. Terraform detecta si hi ha hagut canvis a la infraestructura i aplica les actualitzacions al clúster local de forma idempotent.
