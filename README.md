@@ -48,7 +48,7 @@ Les imatges s'han etiquetat i pujat al repositori públic de Docker Hub perquè 
 
 ---
 
-#Setmana 9: Orquestració Multicontenidor
+# Setmana 9: Orquestració Multicontenidor
 
 ### Diagrama d'Arquitectura
 
@@ -82,3 +82,24 @@ Hem definit un volum de Docker anomenat backend_data associat al servei backend.
 
 ## Gestió de la Configuració
 Per complir amb les bones pràctiques i evitar credencials o valors "hardcodejats" al codi, utilitzem variables d'entorn. Els paràmetres (com el port de l'aplicació) s'agafen d'un fitxer local .env. Aquest fitxer està inclòs al .gitignore per no pujar secrets al repositori, però proporcionem un fitxer .env.example com a plantilla perquè qualsevol altre desenvolupador sàpiga quines variables necessita configurar per fer funcionar l'entorn.
+
+# Setmana 10: Orquestració (Kubernetes)
+
+Per escalar la nostra infraestructura i fer-la resilient, hem migrat els nostres contenidors a un clúster local de Kubernetes (Minikube). Hem definit la nostra infraestructura com a codi utilitzant fitxers manifest (YAML).
+
+### Recursos de Kubernetes Utilitzats
+
+* **ConfigMap:** * *Què és i per què el necessitem:* Ens permet extreure la configuració (com les variables d'entorn, per exemple l'`APP_PORT`) fora dels contenidors. D'aquesta manera, si hem de canviar una configuració, no cal reconstruir la imatge de Docker.
+* **Deployment:** * *Què és i per què el necessitem:* És el controlador que gestiona els nostres Pods (els contenidors). Li diem quin estat volem (ex. "vull 1 rèplica de l'Nginx") i el Deployment s'encarrega de fer-ho realitat i mantenir-ho. Ho fem servir en lloc de crear Pods directament perquè ens aporta auto-curació i ens permetrà fer actualitzacions sense temps de caiguda (rolling updates).
+* **Service:** * *Què és i per què el necessitem:* A Kubernetes, els Pods són efímers; si un mor i es reinicia, la seva adreça IP canvia. El Service ens proporciona una IP i un nom DNS estables. Actua com un balancejador de càrrega i un "directori" per trobar els pods vius.
+
+### Comunicació de Xarxa
+
+* **Comunicació Interna (Entre Pods):** Gràcies als Services, els pods no necessiten saber les IPs dels altres. L'Nginx es pot comunicar amb l'aplicació de Python simplement fent una petició HTTP al nom del servei del backend (`http://backend:8080`). El DNS intern de Kubernetes s'encarrega de traduir aquest nom al pod correcte.
+* **Accés Extern:** Perquè els clients puguin accedir a l'Nginx des de fora del clúster, hem configurat el seu Service amb el tipus `NodePort`. Això obre un port específic a la màquina de Minikube que reenvia el trànsit cap a dins de l'Nginx.
+
+### Escalat i Resiliència (Proves Realitzades)
+
+Hem comprovat el comportament del clúster en situacions d'estrès:
+1. **Escalat:** Al llançar la comanda `kubectl scale deployment nginx-deployment --replicas=3`, el Deployment crea automàticament nous Pods per absorbir la càrrega. El Service s'encarrega automàticament de repartir el trànsit entre els 3 Pods disponibles.
+2. **Resiliència (Auto-curació):** Hem simulat una fallada esborrant manualment un Pod (`kubectl delete pod`). El clúster ha detectat que l'estat actual (0 pods) no coincidia amb l'estat desitjat (1 pod) i ha arrencat un contenidor nou en qüestió de segons per recuperar el servei sense intervenció manual.
