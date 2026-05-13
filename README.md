@@ -121,3 +121,39 @@ A causa de les limitacions de xarxa (GitHub Actions no pot accedir al nostre cl�
 
 * **Integració Contínua (CI) a GitHub:** Quan fem un `push` a la branca `main`, es dispara un workflow de GitHub Actions. Aquest pipeline valida la sintaxi del codi de Terraform (`terraform fmt` i `terraform validate`). Després, construeix les noves imatges de Docker per al Backend i l'Nginx i les puja al nostre repositori de Docker Hub. Per mantenir un control de versions correcte, les imatges s'etiqueten tant amb el tag `latest` com amb el codi SHA exacte del commit (`${{ github.sha }}`).
 * **Desplegament Continu (CD) Local:** Un cop el pipeline de CI està en verd, descarreguem els canvis a la nostra màquina local. Assegurant-nos que el Minikube està encès, anem a la carpeta `terraform/` i executem `terraform apply`. Terraform detecta si hi ha hagut canvis a la infraestructura i aplica les actualitzacions al clúster local de forma idempotent.
+
+# Setmana 13: Test d'Integració i Runbook Operacional
+
+### Test d'Integració (Disaster Recovery)
+Hem realitzat una prova completa de recuperació davant desastres eliminant absolutament tota la infraestructura del clúster amb `terraform destroy`. 
+* **Temps de recuperació:** El desplegament complet de zero amb `terraform apply` ha trigat aproximadament **2 segons** a reconstruir tots els Deployments, Services, ConfigMaps i NetworkPolicies.
+* **Validació End-to-End:** S'ha comprovat via comandes i peticions `curl` que l'Nginx respon correctament des de l'exterior (via NodePort) i que es comunica perfectament amb el Backend intern.
+
+### Runbook Operacional (Guia d'Operacions)
+Aquest és el manual de procediments per a les operacions del dia a dia de GreenDevCorp.
+
+**Com desplegar una nova versió?**
+1. Fer els canvis al codi de l'aplicació o Dockerfile.
+2. Fer `git push` a `main`. Això dispararà el pipeline de GitHub Actions (CI) que generarà la nova imatge a Docker Hub etiquetada amb el SHA del commit.
+3. Actualitzar la variable de versió si cal, anar a la carpeta `terraform/` i executar `terraform apply` (CD). Kubernetes farà un *Rolling Update* sense temps de caiguda.
+
+**Com escalar un servei davant d'un pic de trànsit?**
+* Escalat d'emergència (manual): `kubectl scale deployment nginx-deployment --replicas=3`
+* Escalat permanent (IaC): Editar el fitxer `main.tf` (modificar el valor de `replicas`), fer el commit, i executar `terraform apply`.
+
+**Com comprovar els logs?**
+* Llistar els pods per obtenir el nom exacte: `kubectl get pods`
+* Llegir els registres: `kubectl logs <nom-del-pod>`
+* Seguir l'emissió en temps real: `kubectl logs -f <nom-del-pod>`
+
+### Guia de Resolució de Problemes (Troubleshooting)
+
+* **Problema:** Un Pod es queda en estat `ImagePullBackOff`.
+  * *Diagnòstic:* Kubernetes no troba la imatge al registre de Docker Hub.
+  * *Solució:* Verificar que el nom d'usuari de Docker Hub i l'etiqueta de la imatge al `main.tf` siguin idèntics als que s'han pujat al repositori a través del CI.
+* **Problema:** Servei web inaccessible des de l'exterior.
+  * *Diagnòstic:* Problema amb l'exposició de ports.
+  * *Solució:* Executar `minikube ip` i `kubectl get svc` per comprovar que s'està atacant la IP i el NodePort correctes (de 5 xifres).
+* **Problema:** L'Nginx llança errors 502 perquè no pot parlar amb el Backend.
+  * *Diagnòstic:* La NetworkPolicy està bloquejant el trànsit, o el servei del backend està caigut.
+  * *Solució:* Comprovar que el pod del Backend està en `Running`. Si ho està, descriure la política de xarxa (`kubectl describe networkpolicy`) i comprovar que el pod d'Nginx té exactament l'etiqueta permesa `app: nginx`.
