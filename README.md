@@ -122,6 +122,66 @@ A causa de les limitacions de xarxa (GitHub Actions no pot accedir al nostre cl�
 * **Integració Contínua (CI) a GitHub:** Quan fem un `push` a la branca `main`, es dispara un workflow de GitHub Actions. Aquest pipeline valida la sintaxi del codi de Terraform (`terraform fmt` i `terraform validate`). Després, construeix les noves imatges de Docker per al Backend i l'Nginx i les puja al nostre repositori de Docker Hub. Per mantenir un control de versions correcte, les imatges s'etiqueten tant amb el tag `latest` com amb el codi SHA exacte del commit (`${{ github.sha }}`).
 * **Desplegament Continu (CD) Local:** Un cop el pipeline de CI està en verd, descarreguem els canvis a la nostra màquina local. Assegurant-nos que el Minikube està encès, anem a la carpeta `terraform/` i executem `terraform apply`. Terraform detecta si hi ha hagut canvis a la infraestructura i aplica les actualitzacions al clúster local de forma idempotent.
 
+# Setmana 12: Network Design & Identity
+
+Aquesta secció detalla l'arquitectura de xarxa, la segmentació de seguretat i l'estratègia de gestió d'identitats dissenyada per donar suport al creixement de l'organització, garantint la protecció de dades i l'aïllament d'entorns crítics.
+
+## 1. Arquitectura de Xarxa i Adreçament IP
+
+Per gestionar la infraestructura de GreenDevCorp, hem implementat un disseny de xarxa basat en la notació **CIDR**, utilitzant el bloc privat `10.0.0.0/16`. Aquesta estructura permet una escalabilitat de fins a 65.536 adreces, segmentades de la següent manera:
+```text
+   [ Internet ]
+         │
+         ▼
++-----------------------------------------------------+
+| Firewall / Router Principal                         |
++-----------------------------------------------------+
+         │
+         ├────────────────────────────────────────┐
+         ▼                                        ▼
+  [ DMZ / Partners ]                      [ Xarxa Interna ]
+    (10.0.10.0/24)                          (10.0.0.0/16)
+         │                                        │
+         │                                        ├──────────────┐
+         │                                        ▼              ▼
+         │                                     [ Dev ]      [ Staging ]
+         │                                 (10.0.1.0/24)  (10.0.2.0/24)
+         │                               	      │       		 │
+         └────────────────────────────────────────┼──────────────┘
+                                                  ▼
+                                            [ Producció ]
+                                            (10.0.3.0/24)
+                                         (Aïllada i Segura)
+```
+
+### 1.1. Pla de Subxarxes
+Cada subxarxa de tipus **/24** permet un total de **254 IPs utilitzables**, optimitzant el control i la seguretat.
+
+| Entorn | Rang CIDR | Propòsit |
+| :--- | :--- | :--- |
+| **Desenvolupament (Dev)** | `10.0.1.0/24` | Proves de programadors i entorns personals. |
+| **Staging** | `10.0.2.0/24` | Proves d'integració abans de passar a producció. |
+| **Producció (Prod)** | `10.0.3.0/24` | Entorn crític d'aplicació i dades reals. |
+| **Partners / DMZ** | `10.0.10.0/24` | Accés limitat per a col·laboradors externs. |
+
+### 1.2. Justificació de la Segmentació
+L'ús de subxarxes separades respon al principi de **Defensa en Profunditat**. En aïllar l'entorn de producció, minimitzem el "radi d'impacte": un error o una vulnerabilitat en la xarxa de desenvolupament no pot afectar directament els serveis crítics de l'empresa.
+
+## 2. Seguretat a Kubernetes: NetworkPolicies
+
+Dins d'un clúster de Kubernetes, el comportament per defecte permet que tots els Pods es comuniquin entre si sense restriccions. Per mitigar riscos de seguretat, hem implementat NetworkPolicies, que actuen com un tallafoc (firewall) de capa 3 i 4. L'objectiu és aplicar el principi de mínim privilegi, assegurant que cada component només rebi el tràfic estrictament necessari per al seu funcionament.
+
+### 2.1. Implementació: Backend Security Policy
+El servei de Backend conté la lògica de negoci i l'accés a dades sensibles; per tant, no ha de ser accessible directament des de l'exterior ni per altres serveis no autoritzats del clúster.
+
+Hem definit una política de seguretat que estableix les següents regles:
+
+Aïllament d'entrada (Ingress): Es bloqueja tot el tràfic entrant per defecte.
+
+Accés selectiu: Només es permeten connexions si provenen de Pods etiquetats amb app: nginx (el nostre servidor web/proxy).
+
+Restricció de ports: La comunicació només es permet a través del port 8080, que és on escolta l'aplicació.
+
 # Setmana 13: Test d'Integració i Runbook Operacional
 
 ### Test d'Integració (Disaster Recovery)
